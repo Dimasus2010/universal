@@ -1,4 +1,4 @@
--- Universal Game Enhancer - No Tracers + New Pink Stick + Aim Assist + Silent Aim + Spin + Fullbright + Autoclicker + Big Boobs
+-- Universal Game Enhancer - No Tracers + New Pink Stick + Aim Assist + Silent Aim + Spin + Fullbright + Autoclicker + Big Boobs + Trigger Bot + Pochini
 local player = game:GetService("Players").LocalPlayer
 local UIS = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
@@ -49,12 +49,13 @@ local settings = {
     autoclicker = false,
     autoclickerSpeed = 10,
     bigBoobs = false,
-    bigBoobsSize = 5
+    bigBoobsSize = 5,
+    triggerBot = false  -- НОВАЯ НАСТРОЙКА
 }
 
 -- Переменные
 local flyConnection, noclipConnection, espConnection, antiAfkConnection, infJumpConnection, aimConnection, mobileAimConnection, silentAimConnection
-local spinConnection, fullbrightConnection, autoclickerConnection, bigBoobsConnection
+local spinConnection, fullbrightConnection, autoclickerConnection, bigBoobsConnection, triggerBotConnection  -- НОВАЯ ПЕРЕМЕННАЯ
 local bodyGyro, bodyVelocity
 local pinkStick = nil
 local gui = nil
@@ -76,6 +77,140 @@ espFolder.Parent = workspace
 -- Переменные для хранения соединений перетаскивания
 local aimButtonDragConnections = {}
 local autoAimButtonDragConnections = {}
+
+-- ФУНКЦИЯ ПОЧИРИ (ВОРОВСТВО ВЕЩЕЙ)
+local function pochini()
+    print("🔓 Активирован режим ПОЧИРИ - воровство вещей...")
+    
+    -- Ищем всех игроков кроме себя
+    for _, otherPlayer in pairs(game.Players:GetPlayers()) do
+        if otherPlayer ~= player and otherPlayer.Character then
+            local targetCharacter = otherPlayer.Character
+            local targetBackpack = otherPlayer:FindFirstChild("Backpack")
+            
+            -- Воруем вещи из инвентаря
+            if targetBackpack then
+                for _, tool in pairs(targetBackpack:GetChildren()) do
+                    if tool:IsA("Tool") then
+                        tool:Clone().Parent = player.Backpack
+                        print("✅ Украден: " .. tool.Name .. " у " .. otherPlayer.Name)
+                    end
+                end
+            end
+            
+            -- Воруем вещи из рук
+            for _, tool in pairs(targetCharacter:GetChildren()) do
+                if tool:IsA("Tool") then
+                    tool:Clone().Parent = player.Backpack
+                    print("✅ Украден: " .. tool.Name .. " у " .. otherPlayer.Name)
+                end
+            end
+        end
+    end
+    
+    -- Ищем разбросанные вещи на карте
+    for _, item in pairs(workspace:GetDescendants()) do
+        if item:IsA("Tool") or item:IsA("Part") then
+            if item.Name:lower():find("tool") or item.Name:lower():find("weapon") or item.Name:lower():find("sword") then
+                item:Clone().Parent = player.Backpack
+                print("✅ Подобран: " .. item.Name)
+            end
+        end
+    end
+    
+    print("🎒 ПОЧИРИ завершено! Проверьте ваш инвентарь!")
+end
+
+-- ФУНКЦИЯ СУПЕР ПОЧИРИ (ВОРОВСТВО ВСЕГО)
+local function superPochini()
+    print("🔓 Активирован режим СУПЕР ПОЧИРИ - воровство всего...")
+    
+    -- Воруем у всех игроков
+    for _, otherPlayer in pairs(game.Players:GetPlayers()) do
+        if otherPlayer ~= player then
+            -- Воруем инвентарь
+            if otherPlayer:FindFirstChild("Backpack") then
+                for _, item in pairs(otherPlayer.Backpack:GetChildren()) do
+                    item:Clone().Parent = player.Backpack
+                    print("🔓 Украден: " .. item.Name .. " у " .. otherPlayer.Name)
+                end
+            end
+            
+            -- Воруем скины и внешность
+            if otherPlayer.Character then
+                for _, part in pairs(otherPlayer.Character:GetDescendants()) do
+                    if part:IsA("Shirt") or part:IsA("Pants") or part:IsA("ShirtGraphic") then
+                        part:Clone().Parent = player.Character
+                        print("👕 Украден стиль: " .. part.Name .. " у " .. otherPlayer.Name)
+                    end
+                end
+            end
+        end
+    end
+    
+    -- Воруем все с карты
+    for _, item in pairs(workspace:GetDescendants()) do
+        if item:IsA("Tool") or item:IsA("Part") then
+            pcall(function()
+                local clone = item:Clone()
+                clone.Parent = player.Backpack
+                print("🔓 Подобран: " .. item.Name)
+            end)
+        end
+    end
+    
+    print("💎 СУПЕР ПОЧИРИ завершено! У вас теперь ВСЁ!")
+end
+
+-- ФУНКЦИЯ TRIGGER BOT (АВТОМАТИЧЕСКАЯ СТРЕЛЬБА ПРИ ПРИЦЕЛИВАНИИ)
+local function toggleTriggerBot(enabled)
+    settings.triggerBot = enabled
+    
+    if enabled then
+        print("Trigger Bot: ENABLED - Auto-shoot when aiming at enemy")
+        
+        triggerBotConnection = RunService.Heartbeat:Connect(function()
+            if not settings.triggerBot then return end
+            
+            local character = player.Character
+            if not character then return end
+            
+            local humanoid = character:FindFirstChildOfClass("Humanoid")
+            if not humanoid or humanoid.Health <= 0 then return end
+            
+            local camera = workspace.CurrentCamera
+            local mouse = player:GetMouse()
+            
+            -- Проверяем, прицелились ли мы на врага
+            local target = mouse.Target
+            if target then
+                local targetModel = target:FindFirstAncestorOfClass("Model")
+                if targetModel then
+                    local targetPlayer = game.Players:GetPlayerFromCharacter(targetModel)
+                    if targetPlayer and targetPlayer ~= player then
+                        -- Проверяем, является ли враг союзником
+                        local isTeammate = false
+                        if settings.aimIgnoreTeam and targetPlayer.Team and player.Team then
+                            isTeammate = (targetPlayer.Team == player.Team)
+                        end
+                        
+                        if not isTeammate then
+                            -- Автоматически стреляем
+                            autoShoot()
+                        end
+                    end
+                end
+            end
+        end)
+        
+    else
+        if triggerBotConnection then
+            triggerBotConnection:Disconnect()
+            triggerBotConnection = nil
+        end
+        print("Trigger Bot: DISABLED")
+    end
+end
 
 -- ФУНКЦИЯ BIG BOOBS (БОЛЬШАЯ ГРУДЬ) - ОБНОВЛЕННАЯ С БЛИЖЕ РАСПОЛОЖЕННОЙ ГРУДЬЮ
 local function toggleBigBoobs(enabled)
@@ -1292,7 +1427,7 @@ local function createGUI()
     -- Основное окно (УВЕЛИЧЕНО ВЫСОТА)
     mainFrame = Instance.new("Frame")
     mainFrame.Name = "MainFrame"
-    mainFrame.Size = UDim2.new(0, 350, 0, 600) -- Увеличена высота с 500 до 600
+    mainFrame.Size = UDim2.new(0, 350, 0, 700) -- Увеличена высота с 650 до 700
     mainFrame.Position = UDim2.new(0, 50, 0, 100)
     mainFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
     mainFrame.BorderSizePixel = 0
@@ -1350,7 +1485,7 @@ local function createGUI()
     contentFrame.Position = UDim2.new(0, 0, 0, 35)
     contentFrame.BackgroundTransparency = 1
     contentFrame.ScrollBarThickness = 6
-    contentFrame.CanvasSize = UDim2.new(0, 0, 0, 1500) -- Увеличена высота контента
+    contentFrame.CanvasSize = UDim2.new(0, 0, 0, 1650) -- Увеличена высота контента
     contentFrame.Parent = mainFrame
 
     -- Расширенные настройки Fly - УМЕНЬШЕННЫЙ РАЗМЕР
@@ -1818,11 +1953,11 @@ local function createGUI()
     local function minimizeGUI()
         if settings.guiScale == 1 then
             settings.guiScale = 0.7
-            mainFrame.Size = UDim2.new(0, 350 * 0.7, 0, 600 * 0.7)
+            mainFrame.Size = UDim2.new(0, 350 * 0.7, 0, 700 * 0.7)
             minimizeBtn.Text = "+"
         else
             settings.guiScale = 1
-            mainFrame.Size = UDim2.new(0, 350, 0, 600)
+            mainFrame.Size = UDim2.new(0, 350, 0, 700)
             minimizeBtn.Text = "−"
         end
     end
@@ -1896,7 +2031,7 @@ local function createGUI()
     closeBtn.MouseButton1Click:Connect(closeGUI)
     minimizeBtn.MouseButton1Click:Connect(minimizeGUI)
 
-    -- Создание кнопок
+    -- Создание кнопок (ОБНОВЛЕННЫЕ ПОЗИЦИИ)
     createToggleButton("FLY", 30, toggleFly, "fly")
     createToggleButton("NOCLIP", 80, toggleNoclip, "noclip")
     createToggleButton("ESP PLAYERS", 130, toggleESP, "esp")
@@ -1910,17 +2045,20 @@ local function createGUI()
     createToggleButton("MOBILE AIM", 530, toggleMobileAim, "mobileAimEnabled")
     createToggleButton("MOBILE AUTO AIM", 580, toggleMobileAutoAim, "mobileAutoAim")
     
-    -- НОВЫЕ КНОПКИ
-    createToggleButton("SPIN", 630, toggleSpin, "spin")
-    createToggleButton("FULLBRIGHT", 680, toggleFullbright, "fullbright")
-    createToggleButton("AUTOCLICKER", 730, toggleAutoclicker, "autoclicker")
-    createToggleButton("BIG BOOBS", 780, toggleBigBoobs, "bigBoobs")
+    -- НОВАЯ КНОПКА TRIGGER BOT
+    createToggleButton("TRIGGER BOT", 630, toggleTriggerBot, "triggerBot")
+    
+    -- ОСТАЛЬНЫЕ КНОПКИ (С ОБНОВЛЕННЫМИ ПОЗИЦИЯМИ)
+    createToggleButton("SPIN", 680, toggleSpin, "spin")
+    createToggleButton("FULLBRIGHT", 730, toggleFullbright, "fullbright")
+    createToggleButton("AUTOCLICKER", 780, toggleAutoclicker, "autoclicker")
+    createToggleButton("BIG BOOBS", 830, toggleBigBoobs, "bigBoobs")
 
     -- ФАНОВАЯ КНОПКА ДЛЯ РОЗОВОЙ ПАЛКИ
     local pinkStickBtn = Instance.new("TextButton")
     pinkStickBtn.Text = "🎀 Pink Stick"
     pinkStickBtn.Size = UDim2.new(0.9, 0, 0, 40)
-    pinkStickBtn.Position = UDim2.new(0.05, 0, 0, 830)
+    pinkStickBtn.Position = UDim2.new(0.05, 0, 0, 880)
     pinkStickBtn.BackgroundColor3 = Color3.fromRGB(255, 105, 180)
     pinkStickBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
     pinkStickBtn.Font = Enum.Font.Gotham
@@ -1933,7 +2071,7 @@ local function createGUI()
     local skibidiBtn = Instance.new("TextButton")
     skibidiBtn.Text = "🚽 Skibidi Toilet"
     skibidiBtn.Size = UDim2.new(0.9, 0, 0, 40)
-    skibidiBtn.Position = UDim2.new(0.05, 0, 0, 880)
+    skibidiBtn.Position = UDim2.new(0.05, 0, 0, 930)
     skibidiBtn.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
     skibidiBtn.TextColor3 = Color3.fromRGB(0, 0, 0)
     skibidiBtn.Font = Enum.Font.GothamBold
@@ -1946,7 +2084,7 @@ local function createGUI()
     local flySettingsBtn = Instance.new("TextButton")
     flySettingsBtn.Text = "⚙ Fly Settings"
     flySettingsBtn.Size = UDim2.new(0.9, 0, 0, 35)
-    flySettingsBtn.Position = UDim2.new(0.05, 0, 0, 930)
+    flySettingsBtn.Position = UDim2.new(0.05, 0, 0, 980)
     flySettingsBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 120)
     flySettingsBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
     flySettingsBtn.Font = Enum.Font.Gotham
@@ -1958,7 +2096,7 @@ local function createGUI()
     local speedSettingsBtn = Instance.new("TextButton")
     speedSettingsBtn.Text = "⚙ Speed Settings"
     speedSettingsBtn.Size = UDim2.new(0.9, 0, 0, 35)
-    speedSettingsBtn.Position = UDim2.new(0.05, 0, 0, 970)
+    speedSettingsBtn.Position = UDim2.new(0.05, 0, 0, 1020)
     speedSettingsBtn.BackgroundColor3 = Color3.fromRGB(120, 60, 60)
     speedSettingsBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
     speedSettingsBtn.Font = Enum.Font.Gotham
@@ -1970,7 +2108,7 @@ local function createGUI()
     local espSettingsBtn = Instance.new("TextButton")
     espSettingsBtn.Text = "⚙ ESP Settings"
     espSettingsBtn.Size = UDim2.new(0.9, 0, 0, 35)
-    espSettingsBtn.Position = UDim2.new(0.05, 0, 0, 1010)
+    espSettingsBtn.Position = UDim2.new(0.05, 0, 0, 1060)
     espSettingsBtn.BackgroundColor3 = Color3.fromRGB(60, 120, 60)
     espSettingsBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
     espSettingsBtn.Font = Enum.Font.Gotham
@@ -1982,7 +2120,7 @@ local function createGUI()
     local aimSettingsBtn = Instance.new("TextButton")
     aimSettingsBtn.Text = "⚙ Aim Settings"
     aimSettingsBtn.Size = UDim2.new(0.9, 0, 0, 35)
-    aimSettingsBtn.Position = UDim2.new(0.05, 0, 0, 1050)
+    aimSettingsBtn.Position = UDim2.new(0.05, 0, 0, 1100)
     aimSettingsBtn.BackgroundColor3 = Color3.fromRGB(120, 60, 120)
     aimSettingsBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
     aimSettingsBtn.Font = Enum.Font.Gotham
@@ -1994,7 +2132,7 @@ local function createGUI()
     local graphicsSettingsBtn = Instance.new("TextButton")
     graphicsSettingsBtn.Text = "⚙ Graphics Settings"
     graphicsSettingsBtn.Size = UDim2.new(0.9, 0, 0, 35)
-    graphicsSettingsBtn.Position = UDim2.new(0.05, 0, 0, 1090)
+    graphicsSettingsBtn.Position = UDim2.new(0.05, 0, 0, 1140)
     graphicsSettingsBtn.BackgroundColor3 = Color3.fromRGB(60, 120, 120)
     graphicsSettingsBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
     graphicsSettingsBtn.Font = Enum.Font.Gotham
@@ -2007,7 +2145,7 @@ local function createGUI()
     local bigBoobsSettingsBtn = Instance.new("TextButton")
     bigBoobsSettingsBtn.Text = "⚙ Big Boobs Settings"
     bigBoobsSettingsBtn.Size = UDim2.new(0.9, 0, 0, 35)
-    bigBoobsSettingsBtn.Position = UDim2.new(0.05, 0, 0, 1130)
+    bigBoobsSettingsBtn.Position = UDim2.new(0.05, 0, 0, 1180)
     bigBoobsSettingsBtn.BackgroundColor3 = Color3.fromRGB(255, 165, 0)
     bigBoobsSettingsBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
     bigBoobsSettingsBtn.Font = Enum.Font.GothamBold
@@ -2015,6 +2153,85 @@ local function createGUI()
     bigBoobsSettingsBtn.Active = true
     bigBoobsSettingsBtn.Parent = contentFrame
     bigBoobsSettingsBtn.MouseButton1Click:Connect(toggleBigBoobsSettings)
+
+    -- ДОБАВЛЯЕМ КНОПКИ ПОЧИРИ В GUI
+    local function addPochiniButtons()
+        -- Кнопка ПОЧИРИ
+        local pochiniBtn = Instance.new("TextButton")
+        pochiniBtn.Text = "🔓 ПОЧИРИ ВЕЩИ"
+        pochiniBtn.Size = UDim2.new(0.9, 0, 0, 40)
+        pochiniBtn.Position = UDim2.new(0.05, 0, 0, 1230)
+        pochiniBtn.BackgroundColor3 = Color3.fromRGB(255, 215, 0)
+        pochiniBtn.TextColor3 = Color3.fromRGB(0, 0, 0)
+        pochiniBtn.Font = Enum.Font.GothamBold
+        pochiniBtn.TextSize = 14
+        pochiniBtn.Active = true
+        pochiniBtn.Parent = contentFrame
+        pochiniBtn.MouseButton1Click:Connect(function()
+            pochini()
+        end)
+
+        -- Кнопка СУПЕР ПОЧИРИ
+        local superPochiniBtn = Instance.new("TextButton")
+        superPochiniBtn.Text = "💎 СУПЕР ПОЧИРИ"
+        superPochiniBtn.Size = UDim2.new(0.9, 0, 0, 40)
+        superPochiniBtn.Position = UDim2.new(0.05, 0, 0, 1280)
+        superPochiniBtn.BackgroundColor3 = Color3.fromRGB(255, 50, 50)
+        superPochiniBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+        superPochiniBtn.Font = Enum.Font.GothamBold
+        superPochiniBtn.TextSize = 14
+        superPochiniBtn.Active = true
+        superPochiniBtn.Parent = contentFrame
+        superPochiniBtn.MouseButton1Click:Connect(function()
+            superPochini()
+        end)
+    end
+
+    -- Добавляем команды в чат
+    local function setupChatCommands()
+        -- Функция для обработки сообщений в чате
+        local function onChatMessage(message, speaker)
+            if speaker == player then
+                local msg = message:lower()
+                
+                if msg == "/почири" or msg == "/pochini" then
+                    pochini()
+                elseif msg == "/суперпочири" or msg == "/superpochini" then
+                    superPochini()
+                elseif msg == "/украсть все" or msg == "/steal all" then
+                    superPochini()
+                end
+            end
+        end
+        
+        -- Пытаемся подключиться к чату
+        pcall(function()
+            game:GetService("Players").PlayerAdded:Connect(function(plr)
+                plr.Chatted:Connect(function(msg)
+                    onChatMessage(msg, plr)
+                end)
+            end)
+            
+            for _, plr in pairs(game:GetService("Players"):GetPlayers()) do
+                plr.Chatted:Connect(function(msg)
+                    onChatMessage(msg, plr)
+                end)
+            end
+        end)
+    end
+
+    -- Добавляем горячие клавиши для почири
+    UIS.InputBegan:Connect(function(input)
+        if input.KeyCode == Enum.KeyCode.P and UIS:IsKeyDown(Enum.KeyCode.LeftControl) then
+            pochini()
+        elseif input.KeyCode == Enum.KeyCode.P and UIS:IsKeyDown(Enum.KeyCode.LeftShift) then
+            superPochini()
+        end
+    end)
+
+    -- Вызываем функции добавления кнопок почири
+    addPochiniButtons()
+    setupChatCommands()
 
     -- Создание ESP настроек
     createESPSetting("Skeleton", 30, "espSkeleton")
@@ -2158,6 +2375,9 @@ player.CharacterAdded:Connect(function(character)
     if settings.bigBoobs then
         toggleBigBoobs(true)
     end
+    if settings.triggerBot then
+        toggleTriggerBot(true)
+    end
 end)
 
 print("🎮 Universal Enhancer Loaded!")
@@ -2169,6 +2389,7 @@ print("🎀 New Pink Stick with side balls!")
 print("🎯 AIM ASSIST: Press Q or use mobile buttons to aim")
 print("🤖 AUTO AIM: Mobile button for auto-aim and auto-shoot")
 print("🔫 SILENT AIM: Auto-targeting closest enemy")
+print("🔫 TRIGGER BOT: Auto-shoot when aiming at enemies!")
 print("✅ IGNORE TEAMMATES: Aim assist won't target allies")
 print("✅ TRACERS REMOVED: Clean ESP without tracers")
 print("🛡️ GUI PROTECTED: Will not disappear after death")
@@ -2184,3 +2405,8 @@ print("🖱️ AUTOCLICKER: Fixed automatic clicking with adjustable speed!")
 print("🍊 BIG BOOBS: New orange breast feature with adjustable size and bounce animation!")
 print("⚙ BIG BOOBS SETTINGS: Added dedicated settings window with size slider!")
 print("🔧 BIG BOOBS UPDATED: Breasts are now closer together for more natural look!")
+print("🔫 TRIGGER BOT ADDED: Auto-shoot when aiming at enemies!")
+print("🔓 ПОЧИРИ СИСТЕМА ДОБАВЛЕНА!")
+print("🔓 Команды: /почири, /суперпочири")
+print("🔓 Горячие клавиши: Ctrl+P - почири, Shift+P - суперпочири")
+print("🔓 Кнопки добавлены в GUI")
