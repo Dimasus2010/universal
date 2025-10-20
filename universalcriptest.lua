@@ -181,22 +181,61 @@ local function toggleTriggerBot(enabled)
             local camera = workspace.CurrentCamera
             local mouse = player:GetMouse()
             
-            -- Проверяем, прицелились ли мы на врага
-            local target = mouse.Target
-            if target then
-                local targetModel = target:FindFirstAncestorOfClass("Model")
-                if targetModel then
-                    local targetPlayer = game.Players:GetPlayerFromCharacter(targetModel)
-                    if targetPlayer and targetPlayer ~= player then
+            -- Получаем луч от камеры через курсор мыши
+            local mousePos = Vector2.new(mouse.X, mouse.Y)
+            local viewportSize = camera.ViewportSize
+            local screenCenter = Vector2.new(viewportSize.X / 2, viewportSize.Y / 2)
+            
+            -- Используем либо позицию мыши, либо центр экрана для silent aim
+            local rayOrigin = camera.CFrame.Position
+            local rayDirection
+            local useMouse = true
+            
+            if settings.silentAim then
+                -- При silent aim используем ближайшую цель вместо мыши
+                local silentTarget = getClosestTarget()
+                if silentTarget then
+                    rayDirection = (silentTarget.Position - rayOrigin).Unit
+                    useMouse = false
+                else
+                    rayDirection = camera.CFrame.LookVector
+                end
+            else
+                -- Обычный режим - используем позицию мыши
+                local ray = camera:ViewportPointToRay(mousePos.X, mousePos.Y)
+                rayDirection = ray.Direction
+            end
+            
+            -- Создаем параметры рейкаста
+            local raycastParams = RaycastParams.new()
+            raycastParams.FilterType = Enum.RaycastFilterType.Blacklist
+            raycastParams.FilterDescendantsInstances = {character}
+            raycastParams.IgnoreWater = true
+            
+            -- Выполняем рейкаст
+            local raycastResult = workspace:Raycast(rayOrigin, rayDirection * 1000, raycastParams)
+            
+            if raycastResult then
+                local hitPart = raycastResult.Instance
+                local hitModel = hitPart:FindFirstAncestorOfClass("Model")
+                
+                if hitModel then
+                    local hitPlayer = game.Players:GetPlayerFromCharacter(hitModel)
+                    
+                    if hitPlayer and hitPlayer ~= player then
                         -- Проверяем, является ли враг союзником
                         local isTeammate = false
-                        if settings.aimIgnoreTeam and targetPlayer.Team and player.Team then
-                            isTeammate = (targetPlayer.Team == player.Team)
+                        if settings.aimIgnoreTeam and hitPlayer.Team and player.Team then
+                            isTeammate = (hitPlayer.Team == player.Team)
                         end
                         
                         if not isTeammate then
-                            -- Автоматически стреляем
-                            autoShoot()
+                            -- Проверяем, что цель жива
+                            local targetHumanoid = hitModel:FindFirstChildOfClass("Humanoid")
+                            if targetHumanoid and targetHumanoid.Health > 0 then
+                                -- Автоматически стреляем
+                                autoShoot()
+                            end
                         end
                     end
                 end
@@ -209,6 +248,80 @@ local function toggleTriggerBot(enabled)
             triggerBotConnection = nil
         end
         print("Trigger Bot: DISABLED")
+    end
+end
+
+-- УЛУЧШЕННАЯ ФУНКЦИЯ АВТОМАТИЧЕСКОЙ СТРЕЛЬБЫ
+local function autoShoot()
+    if not player.Character then return end
+    
+    -- Ищем оружие в руках
+    local tool = player.Character:FindFirstChildOfClass("Tool")
+    if tool then
+        -- Пытаемся активировать оружие
+        pcall(function()
+            -- Активируем инструмент (основной метод)
+            tool:Activate()
+            
+            -- Ищем все возможные RemoteEvent и RemoteFunction для стрельбы
+            for _, remote in pairs(tool:GetDescendants()) do
+                if remote:IsA("RemoteEvent") then
+                    pcall(function()
+                        -- Попытка различных методов вызова
+                        if remote.Name:lower():find("fire") or remote.Name:lower():find("shoot") or remote.Name:lower():find("attack") then
+                            remote:FireServer()
+                            remote:FireServer("Fire")
+                            remote:FireServer("Shoot")
+                            remote:FireServer("Attack")
+                        else
+                            -- Пробуем стандартные методы
+                            remote:FireServer()
+                            remote:FireServer("Fire", tool.Handle.Position)
+                            remote:FireServer(tool.Handle.Position)
+                        end
+                    end)
+                elseif remote:IsA("RemoteFunction") then
+                    pcall(function()
+                        if remote.Name:lower():find("fire") or remote.Name:lower():find("shoot") or remote.Name:lower():find("attack") then
+                            remote:InvokeServer()
+                            remote:InvokeServer("Fire")
+                        else
+                            remote:InvokeServer()
+                        end
+                    end)
+                end
+            end
+            
+            -- Дополнительно: для определенных типов оружия
+            if tool:FindFirstChild("Handle") then
+                -- Для оружия с ClickDetector
+                local clickDetector = tool.Handle:FindFirstChildOfClass("ClickDetector")
+                if clickDetector then
+                    fireclickdetector(clickDetector)
+                end
+                
+                -- Для модульных скриптов
+                local toolScript = tool:FindFirstChildOfClass("Script")
+                if toolScript then
+                    -- Активируем инструмент повторно для надежности
+                    tool:Activate()
+                end
+            end
+        end)
+    else
+        -- Если нет инструмента, ищем оружие в бэкпаке и пытаемся экипировать
+        local backpack = player:FindFirstChild("Backpack")
+        if backpack then
+            for _, item in pairs(backpack:GetChildren()) do
+                if item:IsA("Tool") then
+                    -- Экипируем инструмент
+                    item.Parent = player.Character
+                    wait(0.1)
+                    autoShoot() -- Рекурсивно вызываем стрельбу
+                    break
+                end
+            end
+        end
     end
 end
 
@@ -1213,30 +1326,6 @@ local function togglePinkStick()
                 
                 local stickTop = stickPos + Vector3.new(0, 10, 0)
                 ball3.Position = stickTop
-            end
-        end)
-    end
-end
-
--- Функция для автоматической стрельбы
-local function autoShoot()
-    if not player.Character then return end
-    
-    -- Ищем оружие в руках
-    local tool = player.Character:FindFirstChildOfClass("Tool")
-    if tool then
-        -- Пытаемся активировать оружие
-        pcall(function()
-            -- Для разных типов оружия
-            tool:Activate()
-            
-            -- Если есть RemoteEvent для стрельбы
-            for _, remote in pairs(tool:GetDescendants()) do
-                if remote:IsA("RemoteEvent") then
-                    pcall(function()
-                        remote:FireServer("Fire", tool.Handle.Position)
-                    end)
-                end
             end
         end)
     end
