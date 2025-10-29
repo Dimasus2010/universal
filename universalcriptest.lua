@@ -50,12 +50,12 @@ local settings = {
     autoclickerSpeed = 10,
     bigBoobs = false,
     bigBoobsSize = 5,
-    triggerBot = false  -- НОВАЯ НАСТРОЙКА
+    triggerBot = false
 }
 
 -- Переменные
 local flyConnection, noclipConnection, espConnection, antiAfkConnection, infJumpConnection, aimConnection, mobileAimConnection, silentAimConnection
-local spinConnection, fullbrightConnection, autoclickerConnection, bigBoobsConnection, triggerBotConnection  -- НОВАЯ ПЕРЕМЕННАЯ
+local spinConnection, fullbrightConnection, autoclickerConnection, bigBoobsConnection, triggerBotConnection
 local bodyGyro, bodyVelocity
 local pinkStick = nil
 local gui = nil
@@ -73,6 +73,10 @@ local breastParts = {}
 local espFolder = Instance.new("Folder")
 espFolder.Name = "ESP"
 espFolder.Parent = workspace
+
+-- Silent Aim Variables
+local silentAimCircle = nil
+local silentAimTarget = nil
 
 -- Переменные для хранения соединений перетаскивания
 local aimButtonDragConnections = {}
@@ -162,12 +166,289 @@ local function superPochini()
     print("💎 СУПЕР ПОЧИРИ завершено! У вас теперь ВСЁ!")
 end
 
--- ФУНКЦИЯ TRIGGER BOT (АВТОМАТИЧЕСКАЯ СТРЕЛЬБА ПРИ ПРИЦЕЛИВАНИИ)
+-- SILENT AIM FOV ВИЗУАЛИЗАЦИЯ
+local function createSilentAimFOV()
+    if silentAimCircle then
+        silentAimCircle:Destroy()
+        silentAimCircle = nil
+    end
+    
+    if not settings.silentAim then return end
+    
+    local camera = workspace.CurrentCamera
+    silentAimCircle = Instance.new("ScreenGui")
+    silentAimCircle.Name = "SilentAimFOV"
+    silentAimCircle.ResetOnSpawn = false
+    silentAimCircle.Parent = game:GetService("CoreGui")
+    
+    local frame = Instance.new("Frame")
+    frame.Size = UDim2.new(0, settings.silentAimFov * 2, 0, settings.silentAimFov * 2)
+    frame.Position = UDim2.new(0.5, -settings.silentAimFov, 0.5, -settings.silentAimFov)
+    frame.BackgroundColor3 = Color3.fromRGB(255, 0, 0)
+    frame.BackgroundTransparency = 0.8
+    frame.BorderSizePixel = 0
+    frame.Parent = silentAimCircle
+    
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(1, 0)
+    corner.Parent = frame
+    
+    print("Silent Aim FOV Circle created: " .. settings.silentAimFov)
+end
+
+-- Функция для получения ближайшей цели для Silent Aim
+local function getClosestTarget()
+    local character = player.Character
+    if not character then return nil end
+    
+    local camera = workspace.CurrentCamera
+    local bestTarget = nil
+    local closestDistance = settings.silentAimFov
+    
+    for _, otherPlayer in pairs(game.Players:GetPlayers()) do
+        if otherPlayer ~= player and otherPlayer.Character then
+            local targetCharacter = otherPlayer.Character
+            local targetPart = targetCharacter:FindFirstChild(settings.silentAimHitbox)
+            local targetHumanoid = targetCharacter:FindFirstChildOfClass("Humanoid")
+            
+            -- Проверяем, является ли игрок союзником
+            local isTeammate = false
+            if settings.aimIgnoreTeam and otherPlayer.Team and player.Team then
+                isTeammate = (otherPlayer.Team == player.Team)
+            end
+            
+            if targetPart and targetHumanoid and targetHumanoid.Health > 0 and not isTeammate then
+                -- Проверяем видимость цели
+                local isVisible = true
+                if not settings.aimThroughWalls then
+                    local raycastParams = RaycastParams.new()
+                    raycastParams.FilterType = Enum.RaycastFilterType.Blacklist
+                    raycastParams.FilterDescendantsInstances = {character, targetCharacter}
+                    local raycastResult = workspace:Raycast(
+                        camera.CFrame.Position,
+                        (targetPart.Position - camera.CFrame.Position).Unit * 1000,
+                        raycastParams
+                    )
+                    
+                    if raycastResult and raycastResult.Instance and not raycastResult.Instance:IsDescendantOf(targetCharacter) then
+                        isVisible = false
+                    end
+                end
+                
+                if isVisible then
+                    -- Вычисляем позицию цели на экране
+                    local screenPoint, onScreen = camera:WorldToViewportPoint(targetPart.Position)
+                    
+                    if onScreen then
+                        -- Вычисляем расстояние от центра экрана до цели
+                        local center = Vector2.new(camera.ViewportSize.X / 2, camera.ViewportSize.Y / 2)
+                        local targetPoint = Vector2.new(screenPoint.X, screenPoint.Y)
+                        local distance = (center - targetPoint).Magnitude
+                        
+                        -- Если цель ближе к центру, чем предыдущая лучшая цель
+                        if distance < closestDistance then
+                            closestDistance = distance
+                            bestTarget = targetPart
+                        end
+                    end
+                end
+            end
+        end
+    end
+    
+    return bestTarget
+end
+
+-- SILENT AIM SYSTEM (ПЕРЕПИСАННЫЙ - РАБОЧИЙ)
+local function toggleSilentAim(enabled)
+    settings.silentAim = enabled
+    
+    if enabled then
+        print("Silent Aim: ENABLED - FOV: " .. settings.silentAimFov)
+        
+        -- Создаем FOV круг
+        createSilentAimFOV()
+        
+        -- Основная логика Silent Aim
+        silentAimConnection = RunService.Heartbeat:Connect(function()
+            if not settings.silentAim then return end
+            
+            -- Получаем ближайшую цель
+            silentAimTarget = getClosestTarget()
+            
+            -- Обновляем цвет FOV круга в зависимости от наличия цели
+            if silentAimCircle and silentAimCircle:FindFirstChildOfClass("Frame") then
+                local frame = silentAimCircle:FindFirstChildOfClass("Frame")
+                if silentAimTarget then
+                    frame.BackgroundColor3 = Color3.fromRGB(0, 255, 0) -- Зеленый когда есть цель
+                else
+                    frame.BackgroundColor3 = Color3.fromRGB(255, 0, 0) -- Красный когда нет цели
+                end
+            end
+        end)
+        
+        -- Перехватываем выстрелы
+        local function hijackRemotes()
+            -- Перехватываем инструменты в руках
+            if player.Character then
+                for _, tool in pairs(player.Character:GetChildren()) do
+                    if tool:IsA("Tool") then
+                        hijackTool(tool)
+                    end
+                end
+            end
+            
+            -- Перехватываем инструменты в бэкпаке
+            local backpack = player:FindFirstChild("Backpack")
+            if backpack then
+                for _, tool in pairs(backpack:GetChildren()) do
+                    if tool:IsA("Tool") then
+                        hijackTool(tool)
+                    end
+                end
+            end
+        end
+        
+        local function hijackTool(tool)
+            -- Перехватываем RemoteEvent
+            for _, remote in pairs(tool:GetDescendants()) do
+                if remote:IsA("RemoteEvent") and not remote:GetAttribute("SilentAimHijacked") then
+                    remote:SetAttribute("SilentAimHijacked", true)
+                    
+                    local oldFireServer = remote.FireServer
+                    remote.FireServer = function(self, ...)
+                        local args = {...}
+                        
+                        if settings.silentAim and silentAimTarget then
+                            -- Простая и эффективная замена аргументов
+                            local newArgs = {}
+                            for i, arg in pairs(args) do
+                                if type(arg) == "table" then
+                                    -- Для таблиц заменяем позицию на позицию цели
+                                    local modifiedTable = {}
+                                    for k, v in pairs(arg) do
+                                        if k == "Hit" or k == "hit" or k == "Target" then
+                                            modifiedTable[k] = silentAimTarget
+                                        elseif k == "Position" then
+                                            modifiedTable[k] = silentAimTarget.Position
+                                        else
+                                            modifiedTable[k] = v
+                                        end
+                                    end
+                                    table.insert(newArgs, modifiedTable)
+                                elseif typeof(arg) == "Vector3" then
+                                    -- Для Vector3 заменяем на позицию цели
+                                    table.insert(newArgs, silentAimTarget.Position)
+                                else
+                                    table.insert(newArgs, arg)
+                                end
+                            end
+                            args = newArgs
+                        end
+                        
+                        return oldFireServer(self, unpack(args))
+                    end
+                end
+            end
+            
+            -- Перехватываем RemoteFunction
+            for _, remote in pairs(tool:GetDescendants()) do
+                if remote:IsA("RemoteFunction") and not remote:GetAttribute("SilentAimHijacked") then
+                    remote:SetAttribute("SilentAimHijacked", true)
+                    
+                    local oldInvokeServer = remote.InvokeServer
+                    remote.InvokeServer = function(self, ...)
+                        local args = {...}
+                        
+                        if settings.silentAim and silentAimTarget then
+                            local newArgs = {}
+                            for i, arg in pairs(args) do
+                                if type(arg) == "table" then
+                                    local modifiedTable = {}
+                                    for k, v in pairs(arg) do
+                                        if k == "Hit" or k == "hit" or k == "Target" then
+                                            modifiedTable[k] = silentAimTarget
+                                        elseif k == "Position" then
+                                            modifiedTable[k] = silentAimTarget.Position
+                                        else
+                                            modifiedTable[k] = v
+                                        end
+                                    end
+                                    table.insert(newArgs, modifiedTable)
+                                elseif typeof(arg) == "Vector3" then
+                                    table.insert(newArgs, silentAimTarget.Position)
+                                else
+                                    table.insert(newArgs, arg)
+                                end
+                            end
+                            args = newArgs
+                        end
+                        
+                        return oldInvokeServer(self, unpack(args))
+                    end
+                end
+            end
+        end
+        
+        -- Запускаем перехват
+        hijackRemotes()
+        
+        -- Перехватываем новые инструменты
+        player.CharacterAdded:Connect(function(character)
+            wait(1)
+            hijackRemotes()
+        end)
+        
+        local backpack = player:FindFirstChild("Backpack")
+        if backpack then
+            backpack.ChildAdded:Connect(function(tool)
+                if tool:IsA("Tool") then
+                    wait(0.5)
+                    hijackTool(tool)
+                end
+            end)
+        end
+        
+    else
+        -- Отключаем Silent Aim
+        if silentAimConnection then
+            silentAimConnection:Disconnect()
+            silentAimConnection = nil
+        end
+        
+        -- Удаляем FOV круг
+        if silentAimCircle then
+            silentAimCircle:Destroy()
+            silentAimCircle = nil
+        end
+        
+        -- Восстанавливаем оригинальные методы
+        silentAimTarget = nil
+        
+        -- Восстанавливаем RemoteEvents
+        local function restoreRemotes()
+            for _, tool in pairs(player.Character:GetChildren()) do
+                if tool:IsA("Tool") then
+                    for _, remote in pairs(tool:GetDescendants()) do
+                        if remote:GetAttribute("SilentAimHijacked") then
+                            remote:SetAttribute("SilentAimHijacked", nil)
+                        end
+                    end
+                end
+            end
+        end
+        
+        pcall(restoreRemotes)
+        print("Silent Aim: DISABLED")
+    end
+end
+
+-- ФУНКЦИЯ TRIGGER BOT (ОБНОВЛЕННАЯ)
 local function toggleTriggerBot(enabled)
     settings.triggerBot = enabled
     
     if enabled then
-        print("Trigger Bot: ENABLED - Auto-shoot when aiming at enemy")
+        print("Trigger Bot: ENABLED")
         
         triggerBotConnection = RunService.Heartbeat:Connect(function()
             if not settings.triggerBot then return end
@@ -178,67 +459,36 @@ local function toggleTriggerBot(enabled)
             local humanoid = character:FindFirstChildOfClass("Humanoid")
             if not humanoid or humanoid.Health <= 0 then return end
             
-            local camera = workspace.CurrentCamera
-            local mouse = player:GetMouse()
-            
-            -- Получаем луч от камеры через курсор мыши
-            local mousePos = Vector2.new(mouse.X, mouse.Y)
-            local viewportSize = camera.ViewportSize
-            local screenCenter = Vector2.new(viewportSize.X / 2, viewportSize.Y / 2)
-            
-            -- Используем либо позицию мыши, либо центр экрана для silent aim
-            local rayOrigin = camera.CFrame.Position
-            local rayDirection
-            local useMouse = true
-            
+            -- Используем Silent Aim цель если включен
+            local target = nil
             if settings.silentAim then
-                -- При silent aim используем ближайшую цель вместо мыши
-                local silentTarget = getClosestTarget()
-                if silentTarget then
-                    rayDirection = (silentTarget.Position - rayOrigin).Unit
-                    useMouse = false
-                else
-                    rayDirection = camera.CFrame.LookVector
-                end
+                target = silentAimTarget
             else
-                -- Обычный режим - используем позицию мыши
-                local ray = camera:ViewportPointToRay(mousePos.X, mousePos.Y)
-                rayDirection = ray.Direction
-            end
-            
-            -- Создаем параметры рейкаста
-            local raycastParams = RaycastParams.new()
-            raycastParams.FilterType = Enum.RaycastFilterType.Blacklist
-            raycastParams.FilterDescendantsInstances = {character}
-            raycastParams.IgnoreWater = true
-            
-            -- Выполняем рейкаст
-            local raycastResult = workspace:Raycast(rayOrigin, rayDirection * 1000, raycastParams)
-            
-            if raycastResult then
-                local hitPart = raycastResult.Instance
-                local hitModel = hitPart:FindFirstAncestorOfClass("Model")
-                
-                if hitModel then
-                    local hitPlayer = game.Players:GetPlayerFromCharacter(hitModel)
-                    
-                    if hitPlayer and hitPlayer ~= player then
-                        -- Проверяем, является ли враг союзником
-                        local isTeammate = false
-                        if settings.aimIgnoreTeam and hitPlayer.Team and player.Team then
-                            isTeammate = (hitPlayer.Team == player.Team)
-                        end
-                        
-                        if not isTeammate then
-                            -- Проверяем, что цель жива
-                            local targetHumanoid = hitModel:FindFirstChildOfClass("Humanoid")
-                            if targetHumanoid and targetHumanoid.Health > 0 then
-                                -- Автоматически стреляем
-                                autoShoot()
+                -- Или ищем цель через мышь
+                local mouse = player:GetMouse()
+                if mouse.Target then
+                    local hitModel = mouse.Target:FindFirstAncestorOfClass("Model")
+                    if hitModel then
+                        local hitPlayer = game.Players:GetPlayerFromCharacter(hitModel)
+                        if hitPlayer and hitPlayer ~= player then
+                            local isTeammate = false
+                            if settings.aimIgnoreTeam and hitPlayer.Team and player.Team then
+                                isTeammate = (hitPlayer.Team == player.Team)
+                            end
+                            if not isTeammate then
+                                local targetHumanoid = hitModel:FindFirstChildOfClass("Humanoid")
+                                if targetHumanoid and targetHumanoid.Health > 0 then
+                                    target = mouse.Target
+                                end
                             end
                         end
                     end
                 end
+            end
+            
+            -- Если есть цель - стреляем
+            if target then
+                autoShoot()
             end
         end)
         
@@ -251,77 +501,35 @@ local function toggleTriggerBot(enabled)
     end
 end
 
--- УЛУЧШЕННАЯ ФУНКЦИЯ АВТОМАТИЧЕСКОЙ СТРЕЛЬБЫ
+-- УЛУЧШЕННАЯ ФУНКЦИЯ СТРЕЛЬБЫ
 local function autoShoot()
     if not player.Character then return end
     
-    -- Ищем оружие в руках
     local tool = player.Character:FindFirstChildOfClass("Tool")
     if tool then
-        -- Пытаемся активировать оружие
         pcall(function()
-            -- Активируем инструмент (основной метод)
+            -- Активируем инструмент
             tool:Activate()
             
-            -- Ищем все возможные RemoteEvent и RemoteFunction для стрельбы
+            -- Ищем RemoteEvent для стрельбы
             for _, remote in pairs(tool:GetDescendants()) do
                 if remote:IsA("RemoteEvent") then
                     pcall(function()
-                        -- Попытка различных методов вызова
-                        if remote.Name:lower():find("fire") or remote.Name:lower():find("shoot") or remote.Name:lower():find("attack") then
-                            remote:FireServer()
-                            remote:FireServer("Fire")
-                            remote:FireServer("Shoot")
-                            remote:FireServer("Attack")
-                        else
-                            -- Пробуем стандартные методы
-                            remote:FireServer()
-                            remote:FireServer("Fire", tool.Handle.Position)
+                        -- Пробуем разные методы вызова
+                        remote:FireServer()
+                        remote:FireServer("Fire")
+                        remote:FireServer("Shoot")
+                        remote:FireServer("Attack")
+                        
+                        -- Для оружия с позицией
+                        if tool:FindFirstChild("Handle") then
                             remote:FireServer(tool.Handle.Position)
+                            remote:FireServer("Fire", tool.Handle.Position)
                         end
                     end)
-                elseif remote:IsA("RemoteFunction") then
-                    pcall(function()
-                        if remote.Name:lower():find("fire") or remote.Name:lower():find("shoot") or remote.Name:lower():find("attack") then
-                            remote:InvokeServer()
-                            remote:InvokeServer("Fire")
-                        else
-                            remote:InvokeServer()
-                        end
-                    end)
-                end
-            end
-            
-            -- Дополнительно: для определенных типов оружия
-            if tool:FindFirstChild("Handle") then
-                -- Для оружия с ClickDetector
-                local clickDetector = tool.Handle:FindFirstChildOfClass("ClickDetector")
-                if clickDetector then
-                    fireclickdetector(clickDetector)
-                end
-                
-                -- Для модульных скриптов
-                local toolScript = tool:FindFirstChildOfClass("Script")
-                if toolScript then
-                    -- Активируем инструмент повторно для надежности
-                    tool:Activate()
                 end
             end
         end)
-    else
-        -- Если нет инструмента, ищем оружие в бэкпаке и пытаемся экипировать
-        local backpack = player:FindFirstChild("Backpack")
-        if backpack then
-            for _, item in pairs(backpack:GetChildren()) do
-                if item:IsA("Tool") then
-                    -- Экипируем инструмент
-                    item.Parent = player.Character
-                    wait(0.1)
-                    autoShoot() -- Рекурсивно вызываем стрельбу
-                    break
-                end
-            end
-        end
     end
 end
 
@@ -859,111 +1067,6 @@ local function toggleSkibidiToilet()
         end)
         
         print("Skibidi Toilet: ON - DOOM DOOM DOOM YES YES YES")
-    end
-end
-
--- Функция для получения ближайшей цели для Silent Aim
-local function getClosestTarget()
-    local character = player.Character
-    if not character then return nil end
-    
-    local camera = workspace.CurrentCamera
-    local bestTarget = nil
-    local closestDistance = settings.silentAimFov
-    
-    for _, otherPlayer in pairs(game.Players:GetPlayers()) do
-        if otherPlayer ~= player and otherPlayer.Character then
-            local targetCharacter = otherPlayer.Character
-            local targetPart = targetCharacter:FindFirstChild(settings.silentAimHitbox)
-            local targetHumanoid = targetCharacter:FindFirstChildOfClass("Humanoid")
-            
-            -- Проверяем, является ли игрок союзником
-            local isTeammate = false
-            if settings.aimIgnoreTeam and otherPlayer.Team and player.Team then
-                isTeammate = (otherPlayer.Team == player.Team)
-            end
-            
-            if targetPart and targetHumanoid and targetHumanoid.Health > 0 and not isTeammate then
-                -- Проверяем видимость цели
-                local isVisible = true
-                if not settings.aimThroughWalls then
-                    local raycastParams = RaycastParams.new()
-                    raycastParams.FilterType = Enum.RaycastFilterType.Blacklist
-                    raycastParams.FilterDescendantsInstances = {character, targetCharacter}
-                    local raycastResult = workspace:Raycast(
-                        camera.CFrame.Position,
-                        (targetPart.Position - camera.CFrame.Position).Unit * 1000,
-                        raycastParams
-                    )
-                    
-                    if raycastResult and raycastResult.Instance and not raycastResult.Instance:IsDescendantOf(targetCharacter) then
-                        isVisible = false
-                    end
-                end
-                
-                if isVisible then
-                    -- Вычисляем позицию цели на экране
-                    local screenPoint, onScreen = camera:WorldToViewportPoint(targetPart.Position)
-                    
-                    if onScreen then
-                        -- Вычисляем расстояние от центра экрана до цели
-                        local center = Vector2.new(camera.ViewportSize.X / 2, camera.ViewportSize.Y / 2)
-                        local targetPoint = Vector2.new(screenPoint.X, screenPoint.Y)
-                        local distance = (center - targetPoint).Magnitude
-                        
-                        -- Если цель ближе к центру, чем предыдущая лучшая цель
-                        if distance < closestDistance then
-                            closestDistance = distance
-                            bestTarget = targetPart
-                        end
-                    end
-                end
-            end
-        end
-    end
-    
-    return bestTarget
-end
-
--- SILENT AIM SYSTEM
-local function toggleSilentAim(enabled)
-    settings.silentAim = enabled
-    
-    if enabled then
-        print("Silent Aim: ENABLED - Auto-targeting closest enemy")
-        
-        -- Подключаем Silent Aim
-        silentAimConnection = RunService.Heartbeat:Connect(function()
-            if not settings.silentAim then return end
-            
-            local target = getClosestTarget()
-            if target then
-                -- Автоматически наводимся на цель
-                local camera = workspace.CurrentCamera
-                local currentCFrame = camera.CFrame
-                local targetPosition = target.Position
-                
-                -- Вычисляем направление к цели
-                local direction = (targetPosition - currentCFrame.Position).Unit
-                
-                -- Плавное наведение
-                local smoothness = math.max(1, settings.aimSmoothness)
-                local newLookVector = currentCFrame.LookVector:Lerp(direction, 1 / smoothness)
-                
-                -- Создаем новый CFrame
-                camera.CFrame = CFrame.lookAt(currentCFrame.Position, currentCFrame.Position + newLookVector)
-                
-                -- Авто-стрельба при активном Silent Aim
-                autoShoot()
-            end
-        end)
-        
-    else
-        if silentAimConnection then
-            silentAimConnection:Disconnect()
-            silentAimConnection = nil
-        end
-        print("Silent Aim: DISABLED")
     end
 end
 
@@ -1516,7 +1619,7 @@ local function createGUI()
     -- Основное окно (УВЕЛИЧЕНО ВЫСОТА)
     mainFrame = Instance.new("Frame")
     mainFrame.Name = "MainFrame"
-    mainFrame.Size = UDim2.new(0, 350, 0, 700) -- Увеличена высота с 650 до 700
+    mainFrame.Size = UDim2.new(0, 350, 0, 700)
     mainFrame.Position = UDim2.new(0, 50, 0, 100)
     mainFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
     mainFrame.BorderSizePixel = 0
@@ -1574,10 +1677,10 @@ local function createGUI()
     contentFrame.Position = UDim2.new(0, 0, 0, 35)
     contentFrame.BackgroundTransparency = 1
     contentFrame.ScrollBarThickness = 6
-    contentFrame.CanvasSize = UDim2.new(0, 0, 0, 1650) -- Увеличена высота контента
+    contentFrame.CanCanvasSize = UDim2.new(0, 0, 0, 1650)
     contentFrame.Parent = mainFrame
 
-    -- Расширенные настройки Fly - УМЕНЬШЕННЫЙ РАЗМЕР
+    -- Расширенные настройки Fly
     local flySettingsFrame = Instance.new("Frame")
     flySettingsFrame.Name = "FlySettingsFrame"
     flySettingsFrame.Size = UDim2.new(0, 300, 0, 120)
@@ -1600,7 +1703,7 @@ local function createGUI()
     flySettingsTitle.TextSize = 12
     flySettingsTitle.Parent = flySettingsFrame
 
-    -- Расширенные настройки Speed - УМЕНЬШЕННЫЙ РАЗМЕР
+    -- Расширенные настройки Speed
     local speedSettingsFrame = Instance.new("Frame")
     speedSettingsFrame.Name = "SpeedSettingsFrame"
     speedSettingsFrame.Size = UDim2.new(0, 300, 0, 150)
@@ -1623,7 +1726,7 @@ local function createGUI()
     speedSettingsTitle.TextSize = 12
     speedSettingsTitle.Parent = speedSettingsFrame
 
-    -- Расширенные настройки ESP - УМЕНЬШЕННЫЙ РАЗМЕР
+    -- Расширенные настройки ESP
     local espSettingsFrame = Instance.new("Frame")
     espSettingsFrame.Name = "ESPSettingsFrame"
     espSettingsFrame.Size = UDim2.new(0, 300, 0, 160)
@@ -1646,10 +1749,10 @@ local function createGUI()
     espSettingsTitle.TextSize = 12
     espSettingsTitle.Parent = espSettingsFrame
 
-    -- Расширенные настройки Aim Assist - УВЕЛИЧЕН РАЗМЕР ДЛЯ ПОЛЗУНКОВ
+    -- Расширенные настройки Aim Assist
     local aimSettingsFrame = Instance.new("Frame")
     aimSettingsFrame.Name = "AimSettingsFrame"
-    aimSettingsFrame.Size = UDim2.new(0, 300, 0, 350) -- Увеличена высота с 280 до 350
+    aimSettingsFrame.Size = UDim2.new(0, 300, 0, 350)
     aimSettingsFrame.Position = UDim2.new(0, 360, 0, 40)
     aimSettingsFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
     aimSettingsFrame.BorderSizePixel = 0
@@ -1669,10 +1772,10 @@ local function createGUI()
     aimSettingsTitle.TextSize = 12
     aimSettingsTitle.Parent = aimSettingsFrame
 
-    -- Расширенные настройки Graphics - УВЕЛИЧЕН РАЗМЕР
+    -- Расширенные настройки Graphics
     local graphicsSettingsFrame = Instance.new("Frame")
     graphicsSettingsFrame.Name = "GraphicsSettingsFrame"
-    graphicsSettingsFrame.Size = UDim2.new(0, 300, 0, 240) -- Увеличена высота с 200 до 240
+    graphicsSettingsFrame.Size = UDim2.new(0, 300, 0, 240)
     graphicsSettingsFrame.Position = UDim2.new(0, 360, 0, 40)
     graphicsSettingsFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
     graphicsSettingsFrame.BorderSizePixel = 0
@@ -1725,14 +1828,14 @@ local function createGUI()
             if enabled then
                 button.Text = "✅ " .. string.sub(button.Text, 5)
                 if settingName == "bigBoobs" then
-                    button.BackgroundColor3 = Color3.fromRGB(255, 165, 0) -- Оранжевый когда включено
+                    button.BackgroundColor3 = Color3.fromRGB(255, 165, 0)
                 else
                     button.BackgroundColor3 = Color3.fromRGB(0, 100, 0)
                 end
             else
                 button.Text = "❌ " .. string.sub(button.Text, 5)
                 if settingName == "bigBoobs" then
-                    button.BackgroundColor3 = Color3.fromRGB(80, 40, 0) -- Темно-оранжевый когда выключено
+                    button.BackgroundColor3 = Color3.fromRGB(80, 40, 0)
                 else
                     button.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
                 end
@@ -1747,7 +1850,6 @@ local function createGUI()
         button.Size = UDim2.new(0.9, 0, 0, 40)
         button.Position = UDim2.new(0.05, 0, 0, yPosition)
         
-        -- Особый цвет для кнопки Big Boobs
         if settingName == "bigBoobs" then
             button.BackgroundColor3 = settings[settingName] and Color3.fromRGB(255, 165, 0) or Color3.fromRGB(80, 40, 0)
         else
@@ -2020,7 +2122,7 @@ local function createGUI()
         end
     end)
 
-    -- Функции управления GUI - ИСПРАВЛЕННЫЕ
+    -- Функции управления GUI
     local function toggleGUI()
         settings.guiVisible = not settings.guiVisible
         mainFrame.Visible = settings.guiVisible
@@ -2120,7 +2222,7 @@ local function createGUI()
     closeBtn.MouseButton1Click:Connect(closeGUI)
     minimizeBtn.MouseButton1Click:Connect(minimizeGUI)
 
-    -- Создание кнопок (ОБНОВЛЕННЫЕ ПОЗИЦИИ)
+    -- Создание кнопок
     createToggleButton("FLY", 30, toggleFly, "fly")
     createToggleButton("NOCLIP", 80, toggleNoclip, "noclip")
     createToggleButton("ESP PLAYERS", 130, toggleESP, "esp")
@@ -2134,10 +2236,10 @@ local function createGUI()
     createToggleButton("MOBILE AIM", 530, toggleMobileAim, "mobileAimEnabled")
     createToggleButton("MOBILE AUTO AIM", 580, toggleMobileAutoAim, "mobileAutoAim")
     
-    -- НОВАЯ КНОПКА TRIGGER BOT
+    -- КНОПКА TRIGGER BOT
     createToggleButton("TRIGGER BOT", 630, toggleTriggerBot, "triggerBot")
     
-    -- ОСТАЛЬНЫЕ КНОПКИ (С ОБНОВЛЕННЫМИ ПОЗИЦИЯМИ)
+    -- ОСТАЛЬНЫЕ КНОПКИ
     createToggleButton("SPIN", 680, toggleSpin, "spin")
     createToggleButton("FULLBRIGHT", 730, toggleFullbright, "fullbright")
     createToggleButton("AUTOCLICKER", 780, toggleAutoclicker, "autoclicker")
@@ -2156,7 +2258,7 @@ local function createGUI()
     pinkStickBtn.Parent = contentFrame
     pinkStickBtn.MouseButton1Click:Connect(togglePinkStick)
 
-    -- КНОПКА ДЛЯ СКИБИДИ ТУАЛЕТА (БЕЛЫЙ ЦВЕТ)
+    -- КНОПКА ДЛЯ СКИБИДИ ТУАЛЕТА
     local skibidiBtn = Instance.new("TextButton")
     skibidiBtn.Text = "🚽 Skibidi Toilet"
     skibidiBtn.Size = UDim2.new(0.9, 0, 0, 40)
@@ -2230,7 +2332,7 @@ local function createGUI()
     graphicsSettingsBtn.Parent = contentFrame
     graphicsSettingsBtn.MouseButton1Click:Connect(toggleGraphicsSettings)
 
-    -- КНОПКА ДЛЯ РАСШИРЕННЫХ НАСТРОЕК BIG BOOBS (ОРАНЖЕВАЯ)
+    -- КНОПКА ДЛЯ РАСШИРЕННЫХ НАСТРОЕК BIG BOOBS
     local bigBoobsSettingsBtn = Instance.new("TextButton")
     bigBoobsSettingsBtn.Text = "⚙ Big Boobs Settings"
     bigBoobsSettingsBtn.Size = UDim2.new(0.9, 0, 0, 35)
@@ -2278,7 +2380,6 @@ local function createGUI()
 
     -- Добавляем команды в чат
     local function setupChatCommands()
-        -- Функция для обработки сообщений в чате
         local function onChatMessage(message, speaker)
             if speaker == player then
                 local msg = message:lower()
@@ -2293,7 +2394,6 @@ local function createGUI()
             end
         end
         
-        -- Пытаемся подключиться к чату
         pcall(function()
             game:GetService("Players").PlayerAdded:Connect(function(plr)
                 plr.Chatted:Connect(function(msg)
@@ -2359,13 +2459,18 @@ local function createGUI()
         settings.silentAimHitbox = value
     end)
 
-    -- Создание ползунков Aim Assist (С ПРАВИЛЬНЫМИ ПОЗИЦИЯМИ)
+    -- Создание ползунков Aim Assist
     createSlider(aimSettingsFrame, "Aim FOV", 210, 10, 200, 50, "aimFov", function(value)
         settings.aimFov = value
     end)
 
     createSlider(aimSettingsFrame, "Silent Aim FOV", 260, 5, 100, 30, "silentAimFov", function(value)
         settings.silentAimFov = value
+        if silentAimCircle and silentAimCircle:FindFirstChildOfClass("Frame") then
+            local frame = silentAimCircle:FindFirstChildOfClass("Frame")
+            frame.Size = UDim2.new(0, value * 2, 0, value * 2)
+            frame.Position = UDim2.new(0.5, -value, 0.5, -value)
+        end
     end)
 
     createSlider(aimSettingsFrame, "Aim Smoothness", 310, 1, 20, 10, "aimSmoothness", function(value)
@@ -2377,10 +2482,9 @@ local function createGUI()
     createGraphicsSetting("Fullbright", 65, toggleFullbright, "fullbright")
     createGraphicsSetting("Autoclicker", 100, toggleAutoclicker, "autoclicker")
 
-    -- Создание ползунка для скорости спина (С ЛИМИТОМ 1000)
+    -- Создание ползунка для скорости спина
     createSlider(graphicsSettingsFrame, "Spin Speed", 135, 1, 1000, 10, "spinSpeed", function(value)
         settings.spinSpeed = value
-        -- Обновляем спин если он активен
         if settings.spin then
             toggleSpin(true)
         end
@@ -2390,14 +2494,13 @@ local function createGUI()
     createSlider(graphicsSettingsFrame, "Autoclicker Speed", 170, 1, 20, 10, "autoclickerSpeed", function(value)
         settings.autoclickerSpeed = value
         if settings.autoclicker then
-            toggleAutoclicker(true) -- Перезапускаем автокликер с новой скоростью
+            toggleAutoclicker(true)
         end
     end)
 
     -- СОЗДАНИЕ НАСТРОЕК BIG BOOBS
     createSlider(bigBoobsSettingsFrame, "Boobs Size", 30, 1, 10, 5, "bigBoobsSize", function(value)
         settings.bigBoobsSize = value
-        -- Обновляем грудь если она активна
         if settings.bigBoobs then
             toggleBigBoobs(true)
         end
@@ -2477,25 +2580,12 @@ print("⚙ Use gear buttons for advanced settings")
 print("🎀 New Pink Stick with side balls!")
 print("🎯 AIM ASSIST: Press Q or use mobile buttons to aim")
 print("🤖 AUTO AIM: Mobile button for auto-aim and auto-shoot")
-print("🔫 SILENT AIM: Auto-targeting closest enemy")
+print("🔫 SILENT AIM: FOV circle shows targeting area - bullets redirect to closest enemy!")
 print("🔫 TRIGGER BOT: Auto-shoot when aiming at enemies!")
+print("🎯 FOV VISUAL: Red circle shows Silent Aim range - turns green when target locked!")
 print("✅ IGNORE TEAMMATES: Aim assist won't target allies")
 print("✅ TRACERS REMOVED: Clean ESP without tracers")
 print("🛡️ GUI PROTECTED: Will not disappear after death")
 print("📐 GUI SCALING: Use - button to resize GUI")
 print("👆 DRAGGABLE: All UI elements can be moved")
-print("🎯 AIM SETTINGS: Now properly working with all options!")
-print("⚡ FLY/SPEED SETTINGS: Added sliders for better control!")
-print("🎯 AIM SETTINGS WINDOW: Now positioned closer to main GUI!")
-print("🚽 SKIBIDI TOILET: New fun feature added!")
-print("🌀 SPIN: Player spinning with BodyAngularVelocity like in Infinite Yield!")
-print("💡 FULLBRIGHT: Maximum brightness enabled!")
-print("🖱️ AUTOCLICKER: Fixed automatic clicking with adjustable speed!")
-print("🍊 BIG BOOBS: New orange breast feature with adjustable size and bounce animation!")
-print("⚙ BIG BOOBS SETTINGS: Added dedicated settings window with size slider!")
-print("🔧 BIG BOOBS UPDATED: Breasts are now closer together for more natural look!")
-print("🔫 TRIGGER BOT ADDED: Auto-shoot when aiming at enemies!")
-print("🔓 ПОЧИРИ СИСТЕМА ДОБАВЛЕНА!")
-print("🔓 Команды: /почири, /суперпочири")
-print("🔓 Горячие клавиши: Ctrl+P - почири, Shift+P - суперпочири")
-print("🔓 Кнопки добавлены в GUI")
+print("🎯 SILENT AIM UPDATED: Now with visual FOV circle and working bullet redirection!")
